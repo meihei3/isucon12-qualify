@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -47,6 +48,7 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
+	TenaCompCache    *cache[int64, *cache[string, *CompetitionRow]]
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -131,11 +133,41 @@ func SetCacheControlPrivate(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+type cache[K comparable, V any] struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[K]V
+}
+
+func NewCache[K comparable, V any]() *cache[K, V] {
+	m := make(map[K]V)
+	c := &cache[K, V]{
+		items: m,
+	}
+	return c
+}
+
+func (c *cache[K, V]) Set(key K, value V) {
+	c.Lock()
+	c.items[key] = value
+	c.Unlock()
+}
+
+func (c *cache[K, V]) Get(key K) (V, bool) {
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
+}
+
 // Run は cmd/isuports/main.go から呼ばれるエントリーポイントです
 func Run() {
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
+
+	// キャッシュ
+	TenaCompCache = NewCache[int64, *cache[string, *CompetitionRow]]()
 
 	var (
 		sqlLogger io.Closer
@@ -539,10 +571,25 @@ type VisitHistorySummaryRow struct {
 
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitonID string) (*BillingReport, error) {
-	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
-	if err != nil {
-		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+	c, f1 := TenaCompCache.Get(tenantID)
+	var comp *CompetitionRow
+	var err error
+	if f1 {
+		var f2 bool
+		comp, f2 = c.Get(competitonID)
+		if !f2 {
+			comp, err = retrieveCompetition(ctx, tenantDB, competitonID)
+			if err != nil {
+				return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+			}
+		}
+	} else {
+		comp, err = retrieveCompetition(ctx, tenantDB, competitonID)
+		if err != nil {
+			return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+		}
 	}
+	ctx.Logger().Debugf("aa")
 
 	// ランキングにアクセスした参加者のIDを取得する
 	vhs := []VisitHistorySummaryRow{}
@@ -925,6 +972,19 @@ func competitionsAddHandler(c echo.Context) error {
 			id, v.tenantID, title, now, now, err,
 		)
 	}
+	tena, f1 := TenaCompCache.Get(v.tenantID)
+	if !f1 {
+		tena = NewCache[string, *CompetitionRow]()
+		TenaCompCache.Set(v.tenantID, tena)
+	}
+	tena.Set(id, &CompetitionRow{
+		TenantID:   v.tenantID,
+		ID:         id,
+		Title:      title,
+		FinishedAt: sql.NullInt64{},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
 
 	res := CompetitionsAddHandlerResult{
 		Competition: CompetitionDetail{
@@ -978,6 +1038,20 @@ func competitionFinishHandler(c echo.Context) error {
 			now, now, id, err,
 		)
 	}
+	tena, _ := TenaCompCache.Get(v.tenantID)
+	n, _ := tena.Get(id)
+	tena.Set(id, &CompetitionRow{
+		TenantID: n.TenantID,
+		ID:       n.ID,
+		Title:    n.Title,
+		FinishedAt: sql.NullInt64{
+			Int64: now,
+			Valid: true,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
@@ -1626,5 +1700,20 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+
+	for i := 1; i <= 100; i++ {
+		db, _ := connectToTenantDB(int64(i))
+		compCache := NewCache[string, *CompetitionRow]()
+		cs := []CompetitionRow{}
+		db.Select(&cs, "SELECT * FROM competition")
+		for _, v := range cs {
+			compCache.Set(v.ID, &v)
+		}
+		TenaCompCache.Set(int64(i), compCache)
+		c.Logger().Debugf("tena:%d count: %d", i, len(cs))
+	}
+	_, p := TenaCompCache.Get(14)
+	c.Logger().Debugf("find in cache: %t", p)
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }
