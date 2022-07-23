@@ -20,7 +20,9 @@ mysql -u"$ISUCON_DB_USER" \
 rm -f ../tenant_db/*.db
 cp -r ../../initial_data/*.db ../tenant_db/
 
-for f in ../../initial_data/*.db; 
-	do 
+FILES="../../initial_data/*.db"
+
+for f in FILES
+do 
 	sqlite3 f .dump > sqlite.sql && bash sqlite3-to-mysql.sh sqlite.sql > mysql.sql && rm sqlite.sql
- 	done
+done
