@@ -1626,5 +1626,23 @@ func initializeHandler(c echo.Context) error {
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
+
+	for i := 1; i < 100; i++ {
+		cd, _ := connectToTenantDB(int64(i))
+		var c []CompetitionRow
+		sql := "INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES"
+		values := []string{}
+
+		cd.Select(&c, "SELECT * FROM competition")
+		for _, v := range c {
+			if v.FinishedAt.Valid {
+				values = append(values, fmt.Sprintf("('%s', %d, '%s', %d, %d, %d)", v.ID, v.TenantID, v.Title, v.FinishedAt.Int64, v.CreatedAt, v.UpdatedAt))
+			} else {
+				values = append(values, fmt.Sprintf("('%s', %d, '%s', null, %d, %d)", v.ID, v.TenantID, v.Title, v.CreatedAt, v.UpdatedAt))
+			}
+		}
+		adminDB.Exec(sql + strings.Join(values, ","))
+	}
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true, Data: res})
 }

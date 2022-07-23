@@ -14,3 +14,17 @@ DELETE FROM visit_history_first_created_at;
 
 INSERT INTO visit_history_first_created_at (player_id, tenant_id, competition_id, min_created_at)
 SELECT player_id, tenant_id, competition_id, MIN(created_at) AS min_created_at FROM visit_history GROUP BY player_id, tenant_id, competition_id;
+
+-- DELETE FROM visit_history_first_created_at WHERE id > 200474;
+
+DROP TABLE IF EXISTS competition;
+CREATE TABLE IF NOT EXISTS competition (
+  id VARCHAR(255) NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  title TEXT NOT NULL,
+  finished_at BIGINT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  INDEX `tenant_id_idx` (`tenant_id`),
+  INDEX `tenant_id_created_at_idx` (`tenant_id`, `created_at`)
+);
