@@ -1,2 +1,4 @@
 sqlite-trace.log
 tenant_db
+dump.sql
+go/isuports
