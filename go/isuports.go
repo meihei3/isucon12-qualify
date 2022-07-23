@@ -678,7 +678,7 @@ func tenantsBillingHandler(c echo.Context) error {
 			}
 			defer tenantDB.Close()
 			cs := []CompetitionRow{}
-			if err := tenantDB.SelectContext(
+			if err := adminDB.SelectContext(
 				ctx,
 				&cs,
 				"SELECT * FROM competition WHERE tenant_id=?",
@@ -925,6 +925,16 @@ func competitionsAddHandler(c echo.Context) error {
 			id, v.tenantID, title, now, now, err,
 		)
 	}
+	if _, err := adminDB.ExecContext(
+		ctx,
+		"INSERT INTO competition (id, tenant_id, title, finished_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, v.tenantID, title, sql.NullInt64{}, now, now,
+	); err != nil {
+		return fmt.Errorf(
+			"error Insert competition: id=%s, tenant_id=%d, title=%s, finishedAt=null, createdAt=%d, updatedAt=%d, %w",
+			id, v.tenantID, title, now, now, err,
+		)
+	}
 
 	res := CompetitionsAddHandlerResult{
 		Competition: CompetitionDetail{
@@ -1150,7 +1160,7 @@ func billingHandler(c echo.Context) error {
 	defer tenantDB.Close()
 
 	cs := []CompetitionRow{}
-	if err := tenantDB.SelectContext(
+	if err := adminDB.SelectContext(
 		ctx,
 		&cs,
 		"SELECT * FROM competition WHERE tenant_id=? ORDER BY created_at DESC",
@@ -1222,7 +1232,7 @@ func playerHandler(c echo.Context) error {
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
 	cs := []CompetitionRow{}
-	if err := tenantDB.SelectContext(
+	if err := adminDB.SelectContext(
 		ctx,
 		&cs,
 		"SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC",
