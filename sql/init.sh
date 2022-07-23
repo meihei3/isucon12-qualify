@@ -22,7 +22,7 @@ cp -r ../../initial_data/*.db ../tenant_db/
 
 FILES="../../initial_data/*.db"
 
-for f in FILES
+for f in $FILES
 do 
-	sqlite3 f .dump > sqlite.sql && bash sqlite3-to-mysql.sh sqlite.sql > mysql.sql && rm sqlite.sql
+	sqlite3 "$f" .dump > sqlite.sql && bash sqlite3-to-mysql.sh sqlite.sql > mysql.sql && rm sqlite.sql
 done
